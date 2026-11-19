@@ -24,8 +24,8 @@ Your router's counters can't answer the question. They add up Internet traffic *
 dashboards on tablets, voice satellites, ESPHome nodes, media servers. On a SIM only the part that
 leaves the house counts, and that part can hold surprises.
 
-The first run of SIM Meter found one. An integration polled a 7 MB file every minute,
-**about 375 GB a month**, invisible among the LAN traffic. The built-in traffic diagnostic named
+The first run of SIM Meter found one. An integration downloaded two files every minute
+(7.4 MB + 1.3 MB): **about 375 GB a month**, invisible among the LAN traffic. The built-in traffic diagnostic named
 the remote host in two minutes.
 
 ## Features
