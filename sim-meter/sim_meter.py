@@ -383,7 +383,11 @@ def supervisor_get(path):
 
 
 def container_names():
-    """Container ip -> add-on name, plus the names of add-ons sharing the host network."""
+    """Container ip -> add-on name, plus the names of add-ons sharing the host network.
+
+    Only `/…/info` endpoints: they are what the default add-on role may read (`/addons`
+    answers 403). The list of add-ons comes from /supervisor/info.
+    """
     names, host_addons = {}, []
     try:
         docker = supervisor_get("/network/info").get("docker", {})
@@ -392,16 +396,26 @@ def container_names():
             names[str(ipaddress.ip_address(gw) + 1)] = "Supervisor"
         if docker.get("dns"):
             names[docker["dns"]] = "DNS (plugin)"
-        for addon in supervisor_get("/addons").get("addons", []):
-            if addon.get("state") != "started":
-                continue
-            info = supervisor_get(f"/addons/{addon['slug']}/info")
-            if info.get("host_network"):
-                host_addons.append(info.get("name") or addon["slug"])
-            elif info.get("ip_address"):
-                names[info["ip_address"]] = info.get("name") or addon["slug"]
+    except Exception as e:
+        log.warning(f"Supervisor /network/info: {e}")
+    try:
+        addons = supervisor_get("/supervisor/info").get("addons", [])
     except Exception as e:
         log.warning(f"Supervisor API unavailable, add-ons shown by IP: {e}")
+        return names, host_addons
+    for addon in addons:
+        if addon.get("state") not in (None, "started"):
+            continue
+        try:
+            info = supervisor_get(f"/addons/{addon['slug']}/info")
+        except Exception as e:
+            log.warning(f"Supervisor /addons/{addon.get('slug')}/info: {e}")
+            continue
+        name = info.get("name") or addon.get("name") or addon["slug"]
+        if info.get("host_network"):
+            host_addons.append(name)
+        elif info.get("ip_address"):
+            names[info["ip_address"]] = name
     return names, sorted(host_addons)
 
 

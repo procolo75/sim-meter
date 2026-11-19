@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.1
+- Fix: add-on names in the diagnostic. The add-on list is read from `/supervisor/info`; `/addons`
+  answers 403 to add-ons with the default role. Each Supervisor call now fails on its own, so one
+  error no longer hides every name.
+
 ## 1.3.0
 - The traffic diagnostic now says **who** generated each flow: the add-on's name, or `host` for
   Home Assistant Core and the add-ons that share the host network (listed in the log).

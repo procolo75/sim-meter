@@ -163,3 +163,29 @@ def test_attribute_unknown_container_and_ambiguous_remote():
     rows = {(o, r, d) for o, r, p, d, u in sm.attribute(flows, containers, {})}
     assert ("container 172.30.33.9", "1.2.3.4", 1) in rows
     assert (sm.HOST_OWNER, "1.2.3.4", 2) in rows   # two candidates: not guessed
+
+
+def test_container_names_uses_info_endpoints_only(monkeypatch):
+    calls = []
+
+    def fake_get(path):
+        calls.append(path)
+        if path == "/addons":
+            raise PermissionError("403")
+        return {
+            "/network/info": {"docker": {"gateway": "172.30.32.1", "dns": "172.30.32.3"}},
+            "/supervisor/info": {"addons": [
+                {"slug": "local_blink", "name": "Blink MQTT", "state": "started"},
+                {"slug": "local_sim-meter", "name": "SIM Meter", "state": "started"},
+                {"slug": "core_samba", "name": "Samba", "state": "stopped"},
+                {"slug": "local_broken", "name": "Broken", "state": "started"},
+            ]},
+            "/addons/local_blink/info": {"name": "Blink MQTT", "ip_address": "172.30.33.5", "host_network": False},
+            "/addons/local_sim-meter/info": {"name": "SIM Meter", "ip_address": "172.30.33.6", "host_network": True},
+        }[path]
+
+    monkeypatch.setattr(sm, "supervisor_get", fake_get)
+    names, host = sm.container_names()
+    assert names == {"172.30.32.2": "Supervisor", "172.30.32.3": "DNS (plugin)", "172.30.33.5": "Blink MQTT"}
+    assert host == ["SIM Meter"]
+    assert "/addons" not in calls and "/addons/core_samba/info" not in calls
