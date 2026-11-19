@@ -1,12 +1,12 @@
 configuration:
   mqtt_host:
     name: Host MQTT
-    description: Lascia vuoto per usare automaticamente il broker dell'add-on Mosquitto.
+    description: Lascia vuoto per usare automaticamente il broker dell'app Mosquitto.
   mqtt_port:
     name: Porta MQTT
   mqtt_user:
     name: Utente MQTT
-    description: Lascia vuoto per usare le credenziali dell'add-on Mosquitto.
+    description: Lascia vuoto per usare le credenziali dell'app Mosquitto.
   mqtt_password:
     name: Password MQTT
   tablet_ip:

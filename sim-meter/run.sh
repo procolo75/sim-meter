@@ -6,7 +6,7 @@ MQTT_PORT=$(bashio::config 'mqtt_port')
 MQTT_USER=$(bashio::config 'mqtt_user')
 MQTT_PASSWORD=$(bashio::config 'mqtt_password')
 
-# Without explicit settings, use the broker credentials the Supervisor provides (Mosquitto add-on).
+# Without explicit settings, use the broker credentials the Supervisor provides (Mosquitto app).
 if [ -z "${MQTT_HOST}" ] && bashio::services.available "mqtt"; then
     MQTT_HOST=$(bashio::services mqtt "host")
     MQTT_PORT=$(bashio::services mqtt "port")

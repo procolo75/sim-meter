@@ -6,7 +6,7 @@
 
 <p align="center">
   <b>How many GB a month does your Home Assistant really need?</b><br>
-  A Home Assistant add-on that measures the host's <i>Internet-only</i> traffic and projects it to 30 days,
+  A Home Assistant app that measures the host's <i>Internet-only</i> traffic and projects it to 30 days,
   so you can size a mobile data SIM before moving Home Assistant onto a 4G/5G router.
 </p>
 
@@ -32,26 +32,26 @@ the remote host in two minutes.
 
 - **Internet-only counting** on the host's physical interface. Private, link-local and multicast
   ranges are excluded, as are your LAN's own public IPv6 prefixes, detected automatically.
-- **Covers everything on the host**: Home Assistant Core, Supervisor, every add-on, updates,
+- **Covers everything on the host**: Home Assistant Core, Supervisor, every app, updates,
   Nabu Casa / remote access, cloud TTS/STT.
 - **Optional LAN device counter**: a device that will stay on your main network (for example a
   wall-panel tablet) will reach Home Assistant through the Internet once HA sits behind a SIM.
   Its traffic is counted separately.
 - **30-day projection**, with variants without the LAN device and with a 25 % safety margin.
 - **Traffic diagnostic** button: captures traffic for 30 s to 1 h and tells you **who** is using it:
-  a per-add-on summary with its 30-day projection, then the top 25 remote hosts with MB down/up,
-  port, reverse DNS and the add-on behind each one.
+  a per-app summary with its 30-day projection, then the top 25 remote hosts with MB down/up,
+  port, reverse DNS and the app behind each one.
 - **Survives restarts and reboots**: totals are persisted and counter resets are detected.
-- **Read-only on your network**: the firewall rules only count bytes and are removed when the add-on stops.
+- **Read-only on your network**: the firewall rules only count bytes and are removed when the app stops.
 - **MQTT Discovery**: sensors appear on their own and are recorded in long-term statistics.
 - IPv4 and IPv6, `amd64` / `aarch64` / `armv7`.
 
 ## Installation
 
-1. Click the button above, or go to **Settings → Add-ons → Add-on Store → ⋮ → Repositories** and add
+1. Click the button above, or go to **Settings → Apps → Install App → ⋮ → Repositories** and add
    `https://github.com/procolo75/sim-meter`.
 2. Install **SIM Meter** and start it.
-3. Make sure you have an MQTT broker. With the official **Mosquitto broker** add-on the credentials
+3. Make sure you have an MQTT broker. With the official **Mosquitto broker** app the credentials
    are picked up automatically.
 
 ## Configuration
@@ -61,9 +61,9 @@ the remote host in two minutes.
 | `tablet_ip` | *(empty)* | IPv4 of one LAN device whose traffic with HA should be counted (see above). |
 | `poll_interval` | `60` | Seconds between counter reads / sensor updates. |
 | `diagnostic_seconds` | `120` | Duration of the traffic diagnostic capture (30–3600). |
-| `mqtt_host` | *(empty)* | Empty = broker from the Mosquitto add-on. |
+| `mqtt_host` | *(empty)* | Empty = broker from the Mosquitto app. |
 | `mqtt_port` | `1883` | |
-| `mqtt_user` / `mqtt_password` | *(empty)* | Empty = credentials from the Mosquitto add-on. |
+| `mqtt_user` / `mqtt_password` | *(empty)* | Empty = credentials from the Mosquitto app. |
 
 ## Entities
 
@@ -77,9 +77,9 @@ All entities belong to the **SIM Meter** device. Data sizes are in decimal GB, t
 | `sensor.sim_totale` | total increasing | Internet + LAN device: what the SIM would carry |
 | `sensor.sim_stima_30_giorni` | measurement | 30-day projection. Attributes: `giorni_misurati`, `inizio_misura`, `stima_senza_tablet_gb`, `stima_con_margine_25_gb` |
 | `button.sim_azzera_misura` | button | Reset totals and start measuring again |
-| `button.sim_diagnostica_traffico` | button | Run the traffic diagnostic (results in the add-on log) |
+| `button.sim_diagnostica_traffico` | button | Run the traffic diagnostic (results in the app log) |
 
-### Diagnostic output (add-on log, example)
+### Diagnostic output (app log, example)
 
 ```text
 DIAGNOSTICA: 83.2 MB in 3600s (= 59.9 GB/30gg a questo ritmo)
@@ -103,7 +103,7 @@ your Home Assistant language is.
 ```mermaid
 flowchart LR
     subgraph host["Home Assistant OS host"]
-        core["HA Core / add-ons / Supervisor"]
+        core["HA Core / apps / Supervisor"]
         pre["mangle PREROUTING -i eth"] --> IN["SIMM_IN"]
         post["mangle POSTROUTING -o eth"] --> OUT["SIMM_OUT"]
     end
@@ -116,17 +116,17 @@ flowchart LR
     p1 -- no --> i1["count: Internet"]
 ```
 
-- The add-on runs with `host_network` and `NET_ADMIN`. It adds two counting chains to the host's
+- The app runs with `host_network` and `NET_ADMIN`. It adds two counting chains to the host's
   `mangle` table, hooked on the interface that holds the default route. It picks the iptables backend
   (nft or legacy) the host itself uses.
 - Every rule ends in `RETURN`: packets are counted, never dropped or changed.
 - Every `poll_interval` seconds the byte counters are read and the deltas added to the totals in
   `/data/state.json`. A counter going backwards (host reboot, rules recreated) is handled as a reset.
 - The diagnostic runs `tcpdump` on the same interface and, at the same time, on the Docker bridges
-  (`hassio`, `docker0`), where each add-on's traffic is still seen with its own container IP, before NAT.
+  (`hassio`, `docker0`), where each app's traffic is still seen with its own container IP, before NAT.
   Matching the two captures by remote host and port, and the container IPs against the Supervisor API,
   gives each flow an owner. Traffic never seen on a bridge belongs to the host itself: Home Assistant
-  Core with its integrations, plus the add-ons that use the host network, which can't be told apart.
+  Core with its integrations, plus the apps that use the host network, which can't be told apart.
 
 ## Reading the numbers
 
@@ -137,7 +137,7 @@ flowchart LR
 - **Devices that move with HA** onto the SIM router's Wi-Fi (sensors, Zigbee/ESPHome, voice
   satellites) talk to it locally and cost nothing. Only devices left on the *other* network matter;
   that's what `tablet_ip` is for.
-- Add a margin for monthly add-on/OS updates (a few hundred MB). The `stima_con_margine_25_gb`
+- Add a margin for monthly app/OS updates (a few hundred MB). The `stima_con_margine_25_gb`
   attribute does that for you.
 
 ## Limitations
