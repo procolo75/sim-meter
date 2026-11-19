@@ -1,0 +1,23 @@
+configuration:
+  mqtt_host:
+    name: MQTT host
+    description: Leave empty to use the broker of the Mosquitto add-on automatically.
+  mqtt_port:
+    name: MQTT port
+  mqtt_user:
+    name: MQTT user
+    description: Leave empty to use the Mosquitto add-on credentials.
+  mqtt_password:
+    name: MQTT password
+  tablet_ip:
+    name: LAN device to count
+    description: >-
+      IPv4 address of one device that will stay on the other network (e.g. a wall-panel tablet).
+      Its traffic with Home Assistant is counted separately, because over a SIM it would go
+      through the Internet. Leave empty if none.
+  poll_interval:
+    name: Poll interval (s)
+    description: How often counters are read and sensors updated.
+  diagnostic_seconds:
+    name: Diagnostic duration (s)
+    description: How long the "Traffic diagnostic" button captures traffic (30–3600).

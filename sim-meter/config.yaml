@@ -1,0 +1,33 @@
+name: "SIM Meter"
+description: "Measures the Internet-only traffic of your Home Assistant host to size a mobile data SIM"
+url: "https://github.com/procolo75/sim-meter"
+version: "1.2.0"
+slug: "sim-meter"
+startup: services
+boot: auto
+init: false
+arch:
+  - amd64
+  - aarch64
+  - armv7
+host_network: true
+privileged:
+  - NET_ADMIN
+services:
+  - mqtt:want
+options:
+  mqtt_host: ""
+  mqtt_port: 1883
+  mqtt_user: ""
+  mqtt_password: ""
+  tablet_ip: ""
+  poll_interval: 60
+  diagnostic_seconds: 120
+schema:
+  mqtt_host: str?
+  mqtt_port: int
+  mqtt_user: str?
+  mqtt_password: password?
+  tablet_ip: str?
+  poll_interval: int(10,3600)
+  diagnostic_seconds: int(30,3600)

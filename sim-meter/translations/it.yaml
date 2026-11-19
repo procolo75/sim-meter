@@ -1,0 +1,23 @@
+configuration:
+  mqtt_host:
+    name: Host MQTT
+    description: Lascia vuoto per usare automaticamente il broker dell'add-on Mosquitto.
+  mqtt_port:
+    name: Porta MQTT
+  mqtt_user:
+    name: Utente MQTT
+    description: Lascia vuoto per usare le credenziali dell'add-on Mosquitto.
+  mqtt_password:
+    name: Password MQTT
+  tablet_ip:
+    name: Dispositivo LAN da contare
+    description: >-
+      Indirizzo IPv4 di un dispositivo che resterà sull'altra rete (es. il tablet a parete).
+      Il suo traffico con Home Assistant è contato a parte, perché con la SIM passerebbe da Internet.
+      Lascia vuoto se non serve.
+  poll_interval:
+    name: Intervallo di lettura (s)
+    description: Ogni quanto vengono letti i contatori e aggiornati i sensori.
+  diagnostic_seconds:
+    name: Durata diagnostica (s)
+    description: Quanto dura la cattura del pulsante "Diagnostica traffico" (30–3600).
