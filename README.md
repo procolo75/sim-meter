@@ -38,8 +38,9 @@ the remote host in two minutes.
   wall-panel tablet) will reach Home Assistant through the Internet once HA sits behind a SIM.
   Its traffic is counted separately.
 - **30-day projection**, with variants without the LAN device and with a 25 % safety margin.
-- **Traffic diagnostic** button: captures traffic for 30 s to 1 h and logs the top 25 remote hosts
-  with MB down/up, port and reverse DNS. Use it to find what's eating your data.
+- **Traffic diagnostic** button: captures traffic for 30 s to 1 h and tells you **who** is using it:
+  a per-add-on summary with its 30-day projection, then the top 25 remote hosts with MB down/up,
+  port, reverse DNS and the add-on behind each one.
 - **Survives restarts and reboots**: totals are persisted and counter resets are detected.
 - **Read-only on your network**: the firewall rules only count bytes and are removed when the add-on stops.
 - **MQTT Discovery**: sensors appear on their own and are recorded in long-term statistics.
@@ -78,6 +79,19 @@ All entities belong to the **SIM Meter** device. Data sizes are in decimal GB, t
 | `button.sim_azzera_misura` | button | Reset totals and start measuring again |
 | `button.sim_diagnostica_traffico` | button | Run the traffic diagnostic (results in the add-on log) |
 
+### Diagnostic output (add-on log, example)
+
+```text
+DIAGNOSTICA: 83.2 MB in 3600s (= 59.9 GB/30gg a questo ritmo)
+Per origine:
+     40.10 MB  giu   38.20  su    1.90    28.9 GB/30gg  Blink MQTT
+     31.40 MB  giu    5.80  su   25.60    22.6 GB/30gg  HA Core / rete host (SIM Meter)
+      6.20 MB  giu    0.90  su    5.30     4.5 GB/30gg  JARVIS
+Principali indirizzi:
+     11.57 MB  giu   10.44  su    1.12  18.238.158.21 porta 443  (server-18-238-158-21.fco50.r.cloudfront.net)  ← Blink MQTT
+     ...
+```
+
 Entity names are in Italian, the author's language; the entity IDs above stay the same whatever
 your Home Assistant language is.
 
@@ -108,8 +122,11 @@ flowchart LR
 - Every rule ends in `RETURN`: packets are counted, never dropped or changed.
 - Every `poll_interval` seconds the byte counters are read and the deltas added to the totals in
   `/data/state.json`. A counter going backwards (host reboot, rules recreated) is handled as a reset.
-- The diagnostic runs `tcpdump` on the same interface, groups packets by remote host and port, and
-  prints the top 25 with reverse DNS.
+- The diagnostic runs `tcpdump` on the same interface and, at the same time, on the Docker bridges
+  (`hassio`, `docker0`), where each add-on's traffic is still seen with its own container IP, before NAT.
+  Matching the two captures by remote host and port, and the container IPs against the Supervisor API,
+  gives each flow an owner. Traffic never seen on a bridge belongs to the host itself: Home Assistant
+  Core with its integrations, plus the add-ons that use the host network, which can't be told apart.
 
 ## Reading the numbers
 

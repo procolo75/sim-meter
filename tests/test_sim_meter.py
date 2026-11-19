@@ -120,8 +120,46 @@ def test_aggregate_capture():
     ]
     local = {ipaddress.ip_address("192.168.1.115"), ipaddress.ip_address("2a01::1")}
     flows = sm.aggregate_capture(lines, local, "192.168.1.112", ["2a01::/64"])
-    assert flows[("8.8.4.4", "443")] == [1514, 66]
-    assert flows[("192.168.1.112", "33000")] == [200, 0]
-    assert flows[("2a00:1450::1", "443")] == [300, 0]
-    assert flows[("1.1.1.1", None)] == [0, 98]
+    assert flows[("8.8.4.4", "443", "51000")] == [1514, 66]
+    assert flows[("192.168.1.112", "33000", "8123")] == [200, 0]
+    assert flows[("2a00:1450::1", "443", "50001")] == [300, 0]
+    assert flows[("1.1.1.1", None, None)] == [0, 98]
     assert len(flows) == 4  # Odroid and on-link IPv6 neighbour excluded
+
+
+BRIDGE = [
+    "12:00:00.1 IP 172.30.33.5.40000 > 18.238.158.21.443: tcp 517\n",
+    "12:00:00.2 IP 18.238.158.21.443 > 172.30.33.5.40000: tcp 1448\n",
+    "12:00:00.3 IP 172.30.33.7.50000 > 149.154.166.110.443: tcp 1448\n",
+    "12:00:00.4 IP 172.30.33.5.41000 > 172.30.32.1.1883: tcp 50\n",   # to Mosquitto: not Internet
+]
+
+
+def test_container_flows():
+    found = {}
+    sm.container_flows(BRIDGE, [], found)
+    assert found == {("18.238.158.21", "443", "40000"): "172.30.33.5",
+                     ("149.154.166.110", "443", "50000"): "172.30.33.7"}
+
+
+def test_attribute_by_port_fallback_and_host():
+    flows = {
+        ("18.238.158.21", "443", "40000"): [1000, 100],    # same port after NAT → Blink
+        ("149.154.166.110", "443", "61234"): [10, 5000],   # NAT changed the port, only one talker → JARVIS
+        ("91.134.22.133", "443", "52000"): [300, 25000],   # never on a bridge → host
+    }
+    containers = {}
+    sm.container_flows(BRIDGE, [], containers)
+    rows = {(o, r): (d, u) for o, r, p, d, u in
+            sm.attribute(flows, containers, {"172.30.33.5": "Blink MQTT", "172.30.33.7": "JARVIS"})}
+    assert rows[("Blink MQTT", "18.238.158.21")] == (1000, 100)
+    assert rows[("JARVIS", "149.154.166.110")] == (10, 5000)
+    assert rows[(sm.HOST_OWNER, "91.134.22.133")] == (300, 25000)
+
+
+def test_attribute_unknown_container_and_ambiguous_remote():
+    containers = {("1.2.3.4", "443", "1"): "172.30.33.9", ("1.2.3.4", "443", "2"): "172.30.33.10"}
+    flows = {("1.2.3.4", "443", "1"): [1, 0], ("1.2.3.4", "443", "3"): [2, 0]}
+    rows = {(o, r, d) for o, r, p, d, u in sm.attribute(flows, containers, {})}
+    assert ("container 172.30.33.9", "1.2.3.4", 1) in rows
+    assert (sm.HOST_OWNER, "1.2.3.4", 2) in rows   # two candidates: not guessed

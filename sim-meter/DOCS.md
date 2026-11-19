@@ -13,8 +13,8 @@ pick the right data plan before moving Home Assistant onto a mobile (4G/5G) rout
    (`sensor.sim_stima_30_giorni`). Its attributes hold the estimate without the LAN device and
    with a 25 % margin.
 4. Something eating too much? Press **Diagnostica traffico**: the add-on captures traffic for
-   `diagnostic_seconds` and writes the top remote hosts (MB, direction, port, reverse DNS) to this
-   add-on's log.
+   `diagnostic_seconds` and writes to this add-on's log a per-add-on summary (`host` = Home Assistant
+   Core and host-network add-ons) and the top remote hosts (MB, direction, port, reverse DNS, owner).
 
 The firewall rules only count bytes: they never drop or alter traffic, and they are removed
 when the add-on stops. Totals are kept in `/data/state.json` and survive restarts and reboots.

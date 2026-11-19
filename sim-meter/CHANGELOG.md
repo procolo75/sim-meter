@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.3.0
+- The traffic diagnostic now says **who** generated each flow: the add-on's name, or `host` for
+  Home Assistant Core and the add-ons that share the host network (listed in the log).
+  Containers are recognised by also capturing on the Docker bridges, before NAT, and names come
+  from the Supervisor API (`hassio_api: true`).
+- New "Per origine" summary: MB and 30-day projection for each add-on.
+
 ## 1.2.0
 - Configurable diagnostic duration (`diagnostic_seconds`, 30 s to 1 h; default 120 s).
 - The capture is aggregated while it runs, so even an hour uses no extra memory; the log lists the top 25 hosts.

@@ -274,6 +274,8 @@ def summarize(state, now):
 # --------------------------------------------------------------------------- diagnostic
 
 _PKT = re.compile(r"length (\d+): (\S+) > (\S+?):? ")
+_PKT_NOLEN = re.compile(r"IP6? (\S+) > (\S+?):? ")
+HOST_OWNER = "host"
 
 
 def _host(addr):
@@ -293,7 +295,8 @@ def is_internet(ip, lan_v6):
 
 
 def aggregate_capture(lines, local_ips, tablet_ip, lan_v6):
-    """Bytes per (remote ip, remote port) from `tcpdump -e -nn -q` lines, split down/up."""
+    """Bytes per (remote ip, remote port, local port) from `tcpdump -e -nn -q` lines on the
+    physical interface, split [down, up]. Only Internet hosts and the tablet are kept."""
     flows = collections.defaultdict(lambda: [0, 0])
     tablet = ipaddress.ip_address(tablet_ip) if tablet_ip else None
     for line in lines:
@@ -306,24 +309,100 @@ def aggregate_capture(lines, local_ips, tablet_ip, lan_v6):
         if src is None or dst is None:
             continue
         if src in local_ips:
-            remote, rport, direction = dst, dport, 1
+            remote, rport, lport, direction = dst, dport, sport, 1
         elif dst in local_ips:
-            remote, rport, direction = src, sport, 0
+            remote, rport, lport, direction = src, sport, dport, 0
         else:
             continue
         if remote != tablet and not is_internet(remote, lan_v6):
             continue
-        flows[(str(remote), rport)][direction] += size
+        flows[(str(remote), rport, lport)][direction] += size
     return flows
+
+
+def container_flows(lines, lan_v6, into):
+    """From `tcpdump -nn -q` lines on a Docker bridge (before NAT), record which container
+    talks to which Internet host: into[(remote, rport, container port)] = container ip."""
+    for line in lines:
+        m = _PKT_NOLEN.search(line)
+        if not m:
+            continue
+        src, sport = _host(m.group(1))
+        dst, dport = _host(m.group(2))
+        if src is None or dst is None:
+            continue
+        if is_internet(dst, lan_v6) and not is_internet(src, lan_v6):
+            into[(str(dst), dport, sport)] = str(src)
+        elif is_internet(src, lan_v6) and not is_internet(dst, lan_v6):
+            into[(str(src), sport, dport)] = str(dst)
+
+
+def attribute(flows, containers, names):
+    """[(owner, remote, rport, down, up)] merging local ports.
+
+    NAT keeps the container's source port, so (remote, rport, port) seen on the bridge
+    names the container; with no match the traffic is the host's own (HA Core and
+    host-network add-ons). Fallback: one container only ever talked to that remote:port.
+    """
+    by_remote = collections.defaultdict(set)
+    for (remote, rport, _), cip in containers.items():
+        by_remote[(remote, rport)].add(cip)
+    out = collections.defaultdict(lambda: [0, 0])
+    for (remote, rport, lport), (down, up) in flows.items():
+        cip = containers.get((remote, rport, lport))
+        if cip is None and len(by_remote.get((remote, rport), ())) == 1:
+            cip = next(iter(by_remote[(remote, rport)]))
+        owner = names.get(cip, f"container {cip}") if cip else HOST_OWNER
+        out[(owner, remote, rport)][0] += down
+        out[(owner, remote, rport)][1] += up
+    return [(o, r, p, d, u) for (o, r, p), (d, u) in out.items()]
 
 
 def local_addresses(iface):
     ips = set()
-    for cmd in (["ip", "-o", "addr", "show", "dev", iface],):
-        res = run(cmd, check=False)
-        for m in re.finditer(r"inet6? ([0-9a-f.:]+)/", res.stdout):
-            ips.add(ipaddress.ip_address(m.group(1)))
+    res = run(["ip", "-o", "addr", "show", "dev", iface], check=False)
+    for m in re.finditer(r"inet6? ([0-9a-f.:]+)/", res.stdout):
+        ips.add(ipaddress.ip_address(m.group(1)))
     return ips
+
+
+def bridge_interfaces():
+    """Linux bridges on the host (hassio, docker0…): where containers' traffic is seen before NAT."""
+    try:
+        return sorted(n for n in os.listdir("/sys/class/net") if os.path.isdir(f"/sys/class/net/{n}/bridge"))
+    except OSError:
+        return []
+
+
+def supervisor_get(path):
+    import urllib.request
+    token = os.environ.get("SUPERVISOR_TOKEN", "")
+    req = urllib.request.Request(f"http://supervisor{path}", headers={"Authorization": f"Bearer {token}"})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        return json.load(r).get("data", {})
+
+
+def container_names():
+    """Container ip -> add-on name, plus the names of add-ons sharing the host network."""
+    names, host_addons = {}, []
+    try:
+        docker = supervisor_get("/network/info").get("docker", {})
+        gw = docker.get("gateway")
+        if gw:
+            names[str(ipaddress.ip_address(gw) + 1)] = "Supervisor"
+        if docker.get("dns"):
+            names[docker["dns"]] = "DNS (plugin)"
+        for addon in supervisor_get("/addons").get("addons", []):
+            if addon.get("state") != "started":
+                continue
+            info = supervisor_get(f"/addons/{addon['slug']}/info")
+            if info.get("host_network"):
+                host_addons.append(info.get("name") or addon["slug"])
+            elif info.get("ip_address"):
+                names[info["ip_address"]] = info.get("name") or addon["slug"]
+    except Exception as e:
+        log.warning(f"Supervisor API unavailable, add-ons shown by IP: {e}")
+    return names, sorted(host_addons)
 
 
 def _rdns(ip):
@@ -340,26 +419,66 @@ def run_diagnostic(iface, tablet_ip, lan_v6):
     if not _diag_lock.acquire(blocking=False):
         log.info("Diagnostic already running")
         return
+    procs = []
     try:
-        log.info(f"DIAGNOSTICA: catturo il traffico per {DIAG_SECONDS}s su {iface}...")
+        bridges = bridge_interfaces()
+        log.info(f"DIAGNOSTICA: catturo il traffico per {DIAG_SECONDS}s su {iface} "
+                 f"(add-on visti su: {', '.join(bridges) or 'nessun bridge'})...")
         local_ips = local_addresses(iface)
-        proc = subprocess.Popen(["tcpdump", "-i", iface, "-e", "-nn", "-q", "-l", "-s", "96", "ip or ip6"],
-                                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
-        timer = threading.Timer(DIAG_SECONDS, proc.terminate)
+        names, host_addons = container_names()
+
+        containers, readers = {}, []
+        for br in bridges:
+            p = subprocess.Popen(["tcpdump", "-i", br, "-nn", "-q", "-l", "-s", "96", "ip or ip6"],
+                                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+            procs.append(p)
+            t = threading.Thread(target=container_flows, args=(p.stdout, lan_v6, containers), daemon=True)
+            t.start()
+            readers.append(t)
+
+        main_proc = subprocess.Popen(["tcpdump", "-i", iface, "-e", "-nn", "-q", "-l", "-s", "96", "ip or ip6"],
+                                     stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+        procs.append(main_proc)
+
+        def stop_all():
+            for p in procs:
+                p.terminate()
+
+        timer = threading.Timer(DIAG_SECONDS, stop_all)
         timer.start()
         # Aggregated while reading: an hour of capture is millions of lines.
-        flows = aggregate_capture(proc.stdout, local_ips, tablet_ip, lan_v6)
+        flows = aggregate_capture(main_proc.stdout, local_ips, tablet_ip, lan_v6)
         timer.cancel()
-        proc.wait()
-        total = sum(d + u for d, u in flows.values())
+        for p in procs:
+            p.wait()
+        for t in readers:
+            t.join(timeout=5)
+
+        rows = attribute(flows, containers, names)
+        host_label = "HA Core / rete host" + (f" ({', '.join(host_addons)})" if host_addons else "")
+        label = lambda o: host_label if o == HOST_OWNER else o
+
+        total = sum(d + u for _, _, _, d, u in rows)
         log.info(f"DIAGNOSTICA: {total / 1e6:.1f} MB in {DIAG_SECONDS}s "
                  f"(= {total / DIAG_SECONDS * 86400 * 30 / GB:.1f} GB/30gg a questo ritmo)")
-        top = sorted(flows.items(), key=lambda kv: -(kv[1][0] + kv[1][1]))[:25]
-        for (ip, port), (down, up) in top:
-            log.info(f"  {(down + up) / 1e6:8.2f} MB  giu {down / 1e6:7.2f}  su {up / 1e6:7.2f}  "
-                     f"{ip} porta {port or '-'}  ({_rdns(ip)})")
+
+        per_owner = collections.defaultdict(lambda: [0, 0])
+        for o, _, _, d, u in rows:
+            per_owner[o][0] += d
+            per_owner[o][1] += u
+        log.info("Per origine:")
+        for o, (d, u) in sorted(per_owner.items(), key=lambda kv: -sum(kv[1])):
+            log.info(f"  {(d + u) / 1e6:8.2f} MB  giu {d / 1e6:7.2f}  su {u / 1e6:7.2f}  "
+                     f"{(d + u) / DIAG_SECONDS * 86400 * 30 / GB:6.1f} GB/30gg  {label(o)}")
+
+        log.info("Principali indirizzi:")
+        for o, ip, port, d, u in sorted(rows, key=lambda r: -(r[3] + r[4]))[:25]:
+            log.info(f"  {(d + u) / 1e6:8.2f} MB  giu {d / 1e6:7.2f}  su {u / 1e6:7.2f}  "
+                     f"{ip} porta {port or '-'}  ({_rdns(ip)})  ← {'host' if o == HOST_OWNER else o}")
     except Exception as e:
         log.error(f"Diagnostic failed: {e}")
+        for p in procs:
+            p.kill()
     finally:
         _diag_lock.release()
 
